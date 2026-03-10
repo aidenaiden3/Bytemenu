@@ -11,10 +11,10 @@ jobs:
       - name: Install Theos
         run: |
           brew install ldid xz
-          git clone --recursive https://github.com/theos/theos $THEOS
+          sudo git clone --recursive https://github.com/theos/theos $THEOS
           curl -LO https://github.com/theos/sdks/archive/master.tar.gz
           tar -xzf master.tar.gz
-          mv sdks-master/*.sdk $THEOS/sdks/
+          sudo mv sdks-master/*.sdk $THEOS/sdks/
         env:
           THEOS: /opt/theos
 
