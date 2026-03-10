@@ -83,6 +83,10 @@ jobs:
           Depends: mobilesubstrate
           EOF
 
+          cat > ByteMenu/ByteMenu.plist << 'EOF'
+          { Filter = { Bundles = ( "com.TrassGames.G2Companion" ); }; }
+          EOF
+
       - name: Build
         run: |
           cd ByteMenu
