@@ -91,7 +91,7 @@ jobs:
           THEOS: /opt/theos
 
       - name: Upload deb
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ByteMenu-deb
           path: ByteMenu/packages/*.deb
