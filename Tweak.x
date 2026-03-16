@@ -23,38 +23,6 @@ static NSMutableArray* tabContents = nil;
 #define COLOR_WHITE  [UIColor whiteColor]
 #define COLOR_GRAY   [UIColor colorWithWhite:0.6 alpha:1.0]
 
-// ─── IL2CPP method caller ─────────────────────────────────────────────────
-// Calls UnityFramework methods by finding them in memory at runtime
-static void* getUnityFramework() {
-    static void* fw = nil;
-    if (!fw) fw = dlopen("@executable_path/Frameworks/UnityFramework.framework/UnityFramework", RTLD_NOW);
-    return fw;
-}
-
-static void callSetNickName(NSString* name) {
-    // PhotonNetwork.LocalPlayer.NickName setter
-    // Symbol: _ZN6Photon7Realtime11LoadBalancingClient_set_NickName
-    void* fw = getUnityFramework();
-    if (!fw) return;
-    
-    // Try via NSUserDefaults as fallback to persist name
-    [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"bytemenu_nickname"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-    
-    // Find and call the Photon NickName setter
-    typedef void (*SetNickNameFn)(void*, void*);
-    SetNickNameFn fn = (SetNickNameFn)dlsym(fw, "PhotonNetwork_set_NickName_mXXX");
-    if (fn) {
-        // Convert NSString to IL2CPP string - placeholder
-    }
-}
-
-static void callSetRecolorKey(NSString* colorKey) {
-    [[NSUserDefaults standardUserDefaults] setObject:colorKey forKey:@"bytemenu_colorkey"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────
 static UIButton* makeBtn(NSString* title, CGRect frame) {
     UIButton* btn = [UIButton buttonWithType:UIButtonTypeCustom];
     btn.frame = frame;
@@ -75,11 +43,33 @@ static UILabel* makeLabel(NSString* text, CGRect frame, CGFloat size, BOOL bold)
     return lbl;
 }
 
-// ─── Tabs ─────────────────────────────────────────────────────────────────
-static UIView* buildProfileTab(UIViewController* vc) {
+static UIView* buildPlayersTab(UIViewController* vc) {
     UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
 
-    // Display name section
+    UILabel* hdr = makeLabel(@"Players in Lobby", CGRectMake(10, 8, 200, 18), 12, YES);
+    hdr.textColor = COLOR_ACCENT;
+    [v addSubview:hdr];
+
+    UIButton* refreshBtn = makeBtn(@"↻ Refresh", CGRectMake(200, 4, 76, 26));
+    refreshBtn.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
+    [refreshBtn addTarget:vc action:NSSelectorFromString(@"refreshPlayers:") forControlEvents:UIControlEventTouchUpInside];
+    [v addSubview:refreshBtn];
+
+    UIScrollView* scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 34, 285, 306)];
+    scroll.tag = 1002;
+    scroll.showsVerticalScrollIndicator = NO;
+
+    UILabel* placeholder = makeLabel(@"Join a lobby to see players", CGRectMake(10, 10, 265, 20), 12, NO);
+    placeholder.textColor = COLOR_GRAY;
+    placeholder.tag = 1003;
+    [scroll addSubview:placeholder];
+    [v addSubview:scroll];
+    return v;
+}
+
+static UIView* buildProfileTab(UIViewController* vc) {
+    UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 400)];
+
     UILabel* lbl1 = makeLabel(@"Change Display Name", CGRectMake(10, 8, 265, 18), 12, YES);
     lbl1.textColor = COLOR_ACCENT;
     [v addSubview:lbl1];
@@ -94,8 +84,8 @@ static UIView* buildProfileTab(UIViewController* vc) {
     nameField.textColor = COLOR_WHITE;
     nameField.font = [UIFont systemFontOfSize:13];
     nameField.tag = 3001;
-    nameField.placeholder = @"Enter name...";
     nameField.returnKeyType = UIReturnKeyDone;
+    nameField.placeholder = @"Enter name...";
     nameField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Enter name..." attributes:@{NSForegroundColorAttributeName: COLOR_GRAY}];
     nameField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,0)];
     nameField.leftViewMode = UITextFieldViewModeAlways;
@@ -113,12 +103,10 @@ static UIView* buildProfileTab(UIViewController* vc) {
     status.tag = 3002;
     [v addSubview:status];
 
-    // Divider
     UIView* div = [[UIView alloc] initWithFrame:CGRectMake(10, 116, 265, 1)];
     div.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [v addSubview:div];
 
-    // Color section
     UILabel* lbl2 = makeLabel(@"Change Your Color", CGRectMake(10, 124, 265, 18), 12, YES);
     lbl2.textColor = COLOR_ACCENT;
     [v addSubview:lbl2];
@@ -163,31 +151,25 @@ static UIView* buildProfileTab(UIViewController* vc) {
     colorStatus.tag = 3003;
     [v addSubview:colorStatus];
 
-    return v;
-}
+    UIView* div2 = [[UIView alloc] initWithFrame:CGRectMake(10, 308, 265, 1)];
+    div2.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
+    [v addSubview:div2];
 
-static UIView* buildPlayersTab(UIViewController* vc) {
-    UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
+    UIButton* emptyBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    emptyBtn.frame = CGRectMake(8, 316, 269, 42);
+    emptyBtn.backgroundColor = [UIColor colorWithRed:0.7 green:0.1 blue:0.1 alpha:1];
+    emptyBtn.layer.cornerRadius = 10;
+    [emptyBtn setTitle:@"👻  Become Empty Yeep" forState:UIControlStateNormal];
+    [emptyBtn setTitleColor:COLOR_WHITE forState:UIControlStateNormal];
+    emptyBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    [emptyBtn addTarget:vc action:NSSelectorFromString(@"becomeEmptyYeep:") forControlEvents:UIControlEventTouchUpInside];
+    [v addSubview:emptyBtn];
 
-    UILabel* hdr = makeLabel(@"Players in Lobby", CGRectMake(10, 8, 200, 18), 12, YES);
-    hdr.textColor = COLOR_ACCENT;
-    [v addSubview:hdr];
+    UILabel* emptyStatus = makeLabel(@"", CGRectMake(10, 362, 265, 16), 11, NO);
+    emptyStatus.textColor = COLOR_ACCENT;
+    emptyStatus.tag = 3004;
+    [v addSubview:emptyStatus];
 
-    UIButton* refreshBtn = makeBtn(@"↻ Refresh", CGRectMake(200, 4, 76, 26));
-    refreshBtn.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
-    [refreshBtn addTarget:vc action:NSSelectorFromString(@"refreshPlayers:") forControlEvents:UIControlEventTouchUpInside];
-    [v addSubview:refreshBtn];
-
-    UIScrollView* scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 34, 285, 306)];
-    scroll.tag = 1002;
-    scroll.showsVerticalScrollIndicator = NO;
-
-    UILabel* placeholder = makeLabel(@"Join a lobby to see players", CGRectMake(10, 10, 265, 20), 12, NO);
-    placeholder.textColor = COLOR_GRAY;
-    placeholder.tag = 1003;
-    [scroll addSubview:placeholder];
-
-    [v addSubview:scroll];
     return v;
 }
 
@@ -252,7 +234,6 @@ static UIView* buildRPCTab(UIViewController* vc) {
     return v;
 }
 
-// ─── Main Setup ───────────────────────────────────────────────────────────
 static void setupMenu() {
     overlayWindow = [[PassthroughWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     overlayWindow.windowLevel = UIWindowLevelStatusBar + 100;
@@ -265,7 +246,6 @@ static void setupMenu() {
     overlayWindow.rootViewController = vc;
     UIView* root = vc.view;
 
-    // Y Button
     UIButton* eBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     eBtn.frame = CGRectMake(10, 60, 46, 46);
     eBtn.backgroundColor = COLOR_ACCENT;
@@ -277,8 +257,7 @@ static void setupMenu() {
     [eBtn addTarget:vc action:NSSelectorFromString(@"eBtnTapped:") forControlEvents:UIControlEventTouchUpInside];
     [root addSubview:eBtn];
 
-    // Menu Panel
-    menuPanel = [[UIView alloc] initWithFrame:CGRectMake(10, 116, 285, 440)];
+    menuPanel = [[UIView alloc] initWithFrame:CGRectMake(10, 116, 285, 460)];
     menuPanel.backgroundColor = COLOR_BG;
     menuPanel.layer.cornerRadius = 16;
     menuPanel.layer.masksToBounds = YES;
@@ -286,7 +265,6 @@ static void setupMenu() {
     menuPanel.alpha = 0.0;
     [root addSubview:menuPanel];
 
-    // Header
     UILabel* title = makeLabel(@"YeepsMod", CGRectMake(12, 10, 180, 24), 17, YES);
     title.textColor = COLOR_ACCENT;
     [menuPanel addSubview:title];
@@ -311,7 +289,6 @@ static void setupMenu() {
     div.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [menuPanel addSubview:div];
 
-    // Tab bar
     NSArray* tabNames = @[@"Players", @"Profile", @"RPC"];
     UIView* tabBar = [[UIView alloc] initWithFrame:CGRectMake(0, 45, 285, 38)];
     [menuPanel addSubview:tabBar];
@@ -333,8 +310,7 @@ static void setupMenu() {
     div2.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [menuPanel addSubview:div2];
 
-    // Content area
-    UIScrollView* contentArea = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 84, 285, 356)];
+    UIScrollView* contentArea = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 84, 285, 376)];
     contentArea.tag = 5000;
     contentArea.showsVerticalScrollIndicator = NO;
     [menuPanel addSubview:contentArea];
@@ -353,7 +329,6 @@ static void setupMenu() {
     }
     ((UIView*)tabContents[0]).hidden = NO;
 
-    // ── Methods ───────────────────────────────────────────────────────────
     class_addMethod([vc class], NSSelectorFromString(@"eBtnTapped:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
             menuOpen = !menuOpen;
@@ -392,9 +367,8 @@ static void setupMenu() {
                 status.textColor = [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1];
                 return;
             }
-            // Hook into Photon NickName via KVC on the shared PhotonNetwork instance
-            NSArray* classes = @[@"PhotonNetwork", @"PhotonNetworkWrapper", @"NetworkManager"];
             BOOL set = NO;
+            NSArray* classes = @[@"PhotonNetwork", @"PhotonNetworkWrapper", @"NetworkManager"];
             for (NSString* cls in classes) {
                 Class c = NSClassFromString(cls);
                 if (c && [c respondsToSelector:NSSelectorFromString(@"setNickName:")]) {
@@ -417,10 +391,8 @@ static void setupMenu() {
         imp_implementationWithBlock(^(id _self, UIButton* b){
             NSString* colorKey = b.accessibilityIdentifier;
             UILabel* status = (UILabel*)[menuPanel viewWithTag:3003];
-
-            // Try to find and call SetRecolorKey on the avatar
-            NSArray* classes = @[@"AvatarController", @"MasterPlayer", @"CosmeticsDisplay", @"Avatar"];
             BOOL set = NO;
+            NSArray* classes = @[@"AvatarController", @"MasterPlayer", @"CosmeticsDisplay", @"Avatar"];
             for (NSString* cls in classes) {
                 Class c = NSClassFromString(cls);
                 if (c && [c respondsToSelector:NSSelectorFromString(@"setRecolorKey:")]) {
@@ -429,8 +401,6 @@ static void setupMenu() {
                     break;
                 }
             }
-
-            // Highlight selected button
             UIView* profileTab = tabContents[1];
             for (UIView* sub in profileTab.subviews) {
                 if ([sub isKindOfClass:[UIButton class]]) {
@@ -443,7 +413,6 @@ static void setupMenu() {
                     }
                 }
             }
-
             status.text = set
                 ? [NSString stringWithFormat:@"✓ Color set to %@", b.currentTitle]
                 : [NSString stringWithFormat:@"✓ Queued: %@", b.currentTitle];
@@ -452,20 +421,50 @@ static void setupMenu() {
             [[NSUserDefaults standardUserDefaults] synchronize];
         }), "v@:@");
 
+    class_addMethod([vc class], NSSelectorFromString(@"becomeEmptyYeep:"),
+        imp_implementationWithBlock(^(id _self, UIButton* b){
+            UILabel* status = (UILabel*)[menuPanel viewWithTag:3004];
+            BOOL done = NO;
+            NSArray* cosmeticClasses = @[@"CosmeticsDisplay", @"AvatarController", @"MasterPlayer", @"CosmeticsManager"];
+            for (NSString* cls in cosmeticClasses) {
+                Class c = NSClassFromString(cls);
+                if (!c) continue;
+                if ([c respondsToSelector:NSSelectorFromString(@"clearActiveCosmetics")]) {
+                    [c performSelector:NSSelectorFromString(@"clearActiveCosmetics")];
+                    done = YES;
+                }
+                if ([c respondsToSelector:NSSelectorFromString(@"setRecolorKey:")]) {
+                    [c performSelector:NSSelectorFromString(@"setRecolorKey:") withObject:@""];
+                    done = YES;
+                }
+                if ([c respondsToSelector:NSSelectorFromString(@"setActiveCosmeticKeys:")]) {
+                    [c performSelector:NSSelectorFromString(@"setActiveCosmeticKeys:") withObject:@[]];
+                    done = YES;
+                }
+                @try {
+                    id instance = [c valueForKey:@"instance"];
+                    if (instance) {
+                        [instance setValue:@[] forKey:@"activeCosmeticKeys"];
+                        [instance setValue:@"" forKey:@"recolorKey"];
+                        done = YES;
+                    }
+                } @catch (NSException* e) {}
+            }
+            status.text = done ? @"👻 Empty Yeep activated!" : @"👻 Queued — join a lobby first";
+            status.textColor = done
+                ? [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1]
+                : COLOR_ACCENT;
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"bytemenu_emptyYeep"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }), "v@:@");
+
     class_addMethod([vc class], NSSelectorFromString(@"refreshPlayers:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
             UIScrollView* scroll = (UIScrollView*)[menuPanel viewWithTag:1002];
-            UILabel* placeholder = (UILabel*)[scroll viewWithTag:1003];
-
-            // Try to get Photon player list
+            for (UIView* sub in scroll.subviews) [sub removeFromSuperview];
             Class pn = NSClassFromString(@"PhotonNetwork");
             NSArray* players = nil;
-            if (pn) {
-                players = [pn valueForKey:@"playerList"];
-            }
-
-            for (UIView* sub in scroll.subviews) [sub removeFromSuperview];
-
+            if (pn) players = [pn valueForKey:@"playerList"];
             if (!players || players.count == 0) {
                 UILabel* empty = makeLabel(@"No players found — join a lobby first", CGRectMake(10, 10, 265, 40), 12, NO);
                 empty.textColor = COLOR_GRAY;
@@ -474,7 +473,6 @@ static void setupMenu() {
                 scroll.contentSize = CGSizeMake(285, 60);
                 return;
             }
-
             CGFloat py = 8;
             for (id player in players) {
                 NSString* nick = [player valueForKey:@"NickName"] ?: @"Unknown";
@@ -482,8 +480,7 @@ static void setupMenu() {
                 UIView* row = [[UIView alloc] initWithFrame:CGRectMake(8, py, 269, 36)];
                 row.backgroundColor = COLOR_BTN;
                 row.layer.cornerRadius = 8;
-
-                UILabel* nameLbl = makeLabel([NSString stringWithFormat:@"#%@ %@", actorNum, nick], CGRectMake(10, 0, 200, 36), 13, NO);
+                UILabel* nameLbl = makeLabel([NSString stringWithFormat:@"#%@  %@", actorNum, nick], CGRectMake(10, 0, 249, 36), 13, NO);
                 [row addSubview:nameLbl];
                 [scroll addSubview:row];
                 py += 42;
@@ -499,9 +496,7 @@ static void setupMenu() {
             NSString* rpc = rpcField.text;
             NSString* params = paramField.text;
             if (rpc.length == 0) return;
-
-            NSString* entry = [NSString stringWithFormat:@"→ %@(%@)\n%@", rpc, params.length ? params : @"", log.text];
-            log.text = entry;
+            log.text = [NSString stringWithFormat:@"→ %@(%@)\n%@", rpc, params.length ? params : @"", log.text];
             rpcField.text = @"";
             paramField.text = @"";
             [rpcField resignFirstResponder];
