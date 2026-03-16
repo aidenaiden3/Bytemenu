@@ -59,7 +59,7 @@ static UIView* buildPlayersTab(UIViewController* vc) {
     scroll.tag = 1002;
     scroll.showsVerticalScrollIndicator = NO;
 
-    UILabel* placeholder = makeLabel(@"Join a lobby to see players", CGRectMake(10, 10, 265, 20), 12, NO);
+    UILabel* placeholder = makeLabel(@"Tap Refresh to load players", CGRectMake(10, 10, 265, 20), 12, NO);
     placeholder.textColor = COLOR_GRAY;
     placeholder.tag = 1003;
     [scroll addSubview:placeholder];
@@ -360,27 +360,29 @@ static void setupMenu() {
     class_addMethod([vc class], NSSelectorFromString(@"setDisplayName:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
             UITextField* f = (UITextField*)[menuPanel viewWithTag:3001];
-            UILabel* status = (UILabel*)[menuPanel viewWithTag:3002];
+            UILabel* st = (UILabel*)[menuPanel viewWithTag:3002];
             NSString* name = f.text;
             if (name.length == 0) {
-                status.text = @"⚠ Enter a name first";
-                status.textColor = [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1];
+                st.text = @"⚠ Enter a name first";
+                st.textColor = [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1];
                 return;
             }
             BOOL set = NO;
             NSArray* classes = @[@"PhotonNetwork", @"PhotonNetworkWrapper", @"NetworkManager"];
             for (NSString* cls in classes) {
                 Class c = NSClassFromString(cls);
-                if (c && [c respondsToSelector:NSSelectorFromString(@"setNickName:")]) {
-                    [c performSelector:NSSelectorFromString(@"setNickName:") withObject:name];
+                if (!c) continue;
+                IMP imp = class_getMethodImplementation(object_getClass(c), NSSelectorFromString(@"setNickName:"));
+                if (imp) {
+                    ((void(*)(id,SEL,id))imp)(c, NSSelectorFromString(@"setNickName:"), name);
                     set = YES;
                     break;
                 }
             }
-            status.text = set
+            st.text = set
                 ? [NSString stringWithFormat:@"✓ Name set to: %@", name]
                 : [NSString stringWithFormat:@"✓ Queued: %@", name];
-            status.textColor = COLOR_ACCENT;
+            st.textColor = COLOR_ACCENT;
             [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"bytemenu_nickname"];
             [[NSUserDefaults standardUserDefaults] synchronize];
             f.text = @"";
@@ -390,15 +392,21 @@ static void setupMenu() {
     class_addMethod([vc class], NSSelectorFromString(@"setPlayerColor:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
             NSString* colorKey = b.accessibilityIdentifier;
-            UILabel* status = (UILabel*)[menuPanel viewWithTag:3003];
+            UILabel* st = (UILabel*)[menuPanel viewWithTag:3003];
             BOOL set = NO;
             NSArray* classes = @[@"AvatarController", @"MasterPlayer", @"CosmeticsDisplay", @"Avatar"];
             for (NSString* cls in classes) {
                 Class c = NSClassFromString(cls);
-                if (c && [c respondsToSelector:NSSelectorFromString(@"setRecolorKey:")]) {
-                    [c performSelector:NSSelectorFromString(@"setRecolorKey:") withObject:colorKey];
-                    set = YES;
-                    break;
+                if (!c) continue;
+                IMP imp = class_getMethodImplementation(c, NSSelectorFromString(@"setRecolorKey:"));
+                if (imp) {
+                    id instance = nil;
+                    @try { instance = [c valueForKey:@"instance"]; } @catch(NSException* e) {}
+                    if (instance) {
+                        ((void(*)(id,SEL,id))imp)(instance, NSSelectorFromString(@"setRecolorKey:"), colorKey);
+                        set = YES;
+                        break;
+                    }
                 }
             }
             UIView* profileTab = tabContents[1];
@@ -413,45 +421,33 @@ static void setupMenu() {
                     }
                 }
             }
-            status.text = set
+            st.text = set
                 ? [NSString stringWithFormat:@"✓ Color set to %@", b.currentTitle]
                 : [NSString stringWithFormat:@"✓ Queued: %@", b.currentTitle];
-            status.textColor = COLOR_ACCENT;
+            st.textColor = COLOR_ACCENT;
             [[NSUserDefaults standardUserDefaults] setObject:colorKey forKey:@"bytemenu_colorkey"];
             [[NSUserDefaults standardUserDefaults] synchronize];
         }), "v@:@");
 
     class_addMethod([vc class], NSSelectorFromString(@"becomeEmptyYeep:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
-            UILabel* status = (UILabel*)[menuPanel viewWithTag:3004];
+            UILabel* st = (UILabel*)[menuPanel viewWithTag:3004];
             BOOL done = NO;
             NSArray* cosmeticClasses = @[@"CosmeticsDisplay", @"AvatarController", @"MasterPlayer", @"CosmeticsManager"];
             for (NSString* cls in cosmeticClasses) {
                 Class c = NSClassFromString(cls);
                 if (!c) continue;
-                if ([c respondsToSelector:NSSelectorFromString(@"clearActiveCosmetics")]) {
-                    [c performSelector:NSSelectorFromString(@"clearActiveCosmetics")];
-                    done = YES;
-                }
-                if ([c respondsToSelector:NSSelectorFromString(@"setRecolorKey:")]) {
-                    [c performSelector:NSSelectorFromString(@"setRecolorKey:") withObject:@""];
-                    done = YES;
-                }
-                if ([c respondsToSelector:NSSelectorFromString(@"setActiveCosmeticKeys:")]) {
-                    [c performSelector:NSSelectorFromString(@"setActiveCosmeticKeys:") withObject:@[]];
-                    done = YES;
-                }
-                @try {
-                    id instance = [c valueForKey:@"instance"];
-                    if (instance) {
-                        [instance setValue:@[] forKey:@"activeCosmeticKeys"];
-                        [instance setValue:@"" forKey:@"recolorKey"];
-                        done = YES;
-                    }
-                } @catch (NSException* e) {}
+                id instance = nil;
+                @try { instance = [c valueForKey:@"instance"]; } @catch(NSException* e) {}
+                if (!instance) continue;
+                IMP clearImp = class_getMethodImplementation(c, NSSelectorFromString(@"clearActiveCosmetics"));
+                if (clearImp) { ((void(*)(id,SEL))clearImp)(instance, NSSelectorFromString(@"clearActiveCosmetics")); done = YES; }
+                IMP recolorImp = class_getMethodImplementation(c, NSSelectorFromString(@"setRecolorKey:"));
+                if (recolorImp) { ((void(*)(id,SEL,id))recolorImp)(instance, NSSelectorFromString(@"setRecolorKey:"), @""); done = YES; }
+                @try { [instance setValue:@[] forKey:@"activeCosmeticKeys"]; done = YES; } @catch(NSException* e) {}
             }
-            status.text = done ? @"👻 Empty Yeep activated!" : @"👻 Queued — join a lobby first";
-            status.textColor = done
+            st.text = done ? @"👻 Empty Yeep activated!" : @"👻 Queued — join a lobby first";
+            st.textColor = done
                 ? [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1]
                 : COLOR_ACCENT;
             [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"bytemenu_emptyYeep"];
@@ -462,21 +458,66 @@ static void setupMenu() {
         imp_implementationWithBlock(^(id _self, UIButton* b){
             UIScrollView* scroll = (UIScrollView*)[menuPanel viewWithTag:1002];
             for (UIView* sub in scroll.subviews) [sub removeFromSuperview];
-            Class pn = NSClassFromString(@"PhotonNetwork");
-            NSArray* players = nil;
-            if (pn) players = [pn valueForKey:@"playerList"];
-            if (!players || players.count == 0) {
-                UILabel* empty = makeLabel(@"No players found — join a lobby first", CGRectMake(10, 10, 265, 40), 12, NO);
+
+            NSMutableArray* foundPlayers = [NSMutableArray array];
+            NSArray* photonClassNames = @[
+                @"PhotonNetwork", @"LoadBalancingClient",
+                @"PhotonPlayer", @"Player", @"RoomInfo"
+            ];
+
+            for (NSString* cls in photonClassNames) {
+                Class c = NSClassFromString(cls);
+                if (!c) continue;
+                @try {
+                    id val = [c valueForKey:@"playerList"];
+                    if ([val isKindOfClass:[NSArray class]] && ((NSArray*)val).count > 0) {
+                        [foundPlayers addObjectsFromArray:(NSArray*)val];
+                        break;
+                    }
+                    val = [c valueForKey:@"PlayerList"];
+                    if ([val isKindOfClass:[NSArray class]] && ((NSArray*)val).count > 0) {
+                        [foundPlayers addObjectsFromArray:(NSArray*)val];
+                        break;
+                    }
+                } @catch (NSException* e) {}
+            }
+
+            if (foundPlayers.count == 0) {
+                unsigned int count;
+                Class* classes = objc_copyClassList(&count);
+                for (unsigned int i = 0; i < count; i++) {
+                    NSString* name = NSStringFromClass(classes[i]);
+                    if ([name containsString:@"Player"] || [name containsString:@"Photon"]) {
+                        @try {
+                            id instance = [classes[i] valueForKey:@"instance"];
+                            if (!instance) continue;
+                            id list = [instance valueForKey:@"playerList"];
+                            if (!list) list = [instance valueForKey:@"PlayerList"];
+                            if ([list isKindOfClass:[NSArray class]] && ((NSArray*)list).count > 0) {
+                                [foundPlayers addObjectsFromArray:(NSArray*)list];
+                                break;
+                            }
+                        } @catch (NSException* e) {}
+                    }
+                }
+                free(classes);
+            }
+
+            if (foundPlayers.count == 0) {
+                UILabel* empty = makeLabel(@"No players found — join a lobby and try again", CGRectMake(10, 10, 265, 60), 12, NO);
                 empty.textColor = COLOR_GRAY;
-                empty.numberOfLines = 2;
+                empty.numberOfLines = 3;
                 [scroll addSubview:empty];
-                scroll.contentSize = CGSizeMake(285, 60);
+                scroll.contentSize = CGSizeMake(285, 80);
                 return;
             }
+
             CGFloat py = 8;
-            for (id player in players) {
-                NSString* nick = [player valueForKey:@"NickName"] ?: @"Unknown";
-                NSNumber* actorNum = [player valueForKey:@"ActorNumber"];
+            for (id player in foundPlayers) {
+                NSString* nick = @"Unknown";
+                NSNumber* actorNum = @0;
+                @try { nick = [player valueForKey:@"NickName"] ?: @"Unknown"; } @catch(NSException* e) {}
+                @try { actorNum = [player valueForKey:@"ActorNumber"] ?: @0; } @catch(NSException* e) {}
                 UIView* row = [[UIView alloc] initWithFrame:CGRectMake(8, py, 269, 36)];
                 row.backgroundColor = COLOR_BTN;
                 row.layer.cornerRadius = 8;
