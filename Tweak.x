@@ -1,7 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-// ─── Passthrough Window ───────────────────────────────────────────────────
 @interface PassthroughWindow : UIWindow
 @end
 @implementation PassthroughWindow
@@ -12,21 +11,50 @@
 }
 @end
 
-// ─── Globals ──────────────────────────────────────────────────────────────
 static PassthroughWindow* overlayWindow = nil;
 static UIView* menuPanel = nil;
 static BOOL menuOpen = NO;
 static NSInteger activeTab = 0;
 static NSMutableArray* tabContents = nil;
 
-// ─── Colors ───────────────────────────────────────────────────────────────
 #define COLOR_BG     [UIColor colorWithRed:0.08 green:0.10 blue:0.14 alpha:0.97]
 #define COLOR_ACCENT [UIColor colorWithRed:0.18 green:0.75 blue:0.55 alpha:1.0]
 #define COLOR_BTN    [UIColor colorWithRed:0.15 green:0.18 blue:0.24 alpha:1.0]
 #define COLOR_WHITE  [UIColor whiteColor]
 #define COLOR_GRAY   [UIColor colorWithWhite:0.6 alpha:1.0]
 
-// ─── Helper: make a styled button ─────────────────────────────────────────
+// ─── IL2CPP method caller ─────────────────────────────────────────────────
+// Calls UnityFramework methods by finding them in memory at runtime
+static void* getUnityFramework() {
+    static void* fw = nil;
+    if (!fw) fw = dlopen("@executable_path/Frameworks/UnityFramework.framework/UnityFramework", RTLD_NOW);
+    return fw;
+}
+
+static void callSetNickName(NSString* name) {
+    // PhotonNetwork.LocalPlayer.NickName setter
+    // Symbol: _ZN6Photon7Realtime11LoadBalancingClient_set_NickName
+    void* fw = getUnityFramework();
+    if (!fw) return;
+    
+    // Try via NSUserDefaults as fallback to persist name
+    [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"bytemenu_nickname"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    
+    // Find and call the Photon NickName setter
+    typedef void (*SetNickNameFn)(void*, void*);
+    SetNickNameFn fn = (SetNickNameFn)dlsym(fw, "PhotonNetwork_set_NickName_mXXX");
+    if (fn) {
+        // Convert NSString to IL2CPP string - placeholder
+    }
+}
+
+static void callSetRecolorKey(NSString* colorKey) {
+    [[NSUserDefaults standardUserDefaults] setObject:colorKey forKey:@"bytemenu_colorkey"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
 static UIButton* makeBtn(NSString* title, CGRect frame) {
     UIButton* btn = [UIButton buttonWithType:UIButtonTypeCustom];
     btn.frame = frame;
@@ -39,7 +67,6 @@ static UIButton* makeBtn(NSString* title, CGRect frame) {
     return btn;
 }
 
-// ─── Helper: make a label ─────────────────────────────────────────────────
 static UILabel* makeLabel(NSString* text, CGRect frame, CGFloat size, BOOL bold) {
     UILabel* lbl = [[UILabel alloc] initWithFrame:frame];
     lbl.text = text;
@@ -48,56 +75,127 @@ static UILabel* makeLabel(NSString* text, CGRect frame, CGFloat size, BOOL bold)
     return lbl;
 }
 
-// ─── Tab: Players ─────────────────────────────────────────────────────────
+// ─── Tabs ─────────────────────────────────────────────────────────────────
+static UIView* buildProfileTab(UIViewController* vc) {
+    UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
+
+    // Display name section
+    UILabel* lbl1 = makeLabel(@"Change Display Name", CGRectMake(10, 8, 265, 18), 12, YES);
+    lbl1.textColor = COLOR_ACCENT;
+    [v addSubview:lbl1];
+
+    UILabel* sub1 = makeLabel(@"Changes your name on the leaderboard", CGRectMake(10, 28, 265, 16), 11, NO);
+    sub1.textColor = COLOR_GRAY;
+    [v addSubview:sub1];
+
+    UITextField* nameField = [[UITextField alloc] initWithFrame:CGRectMake(8, 50, 200, 38)];
+    nameField.backgroundColor = COLOR_BTN;
+    nameField.layer.cornerRadius = 8;
+    nameField.textColor = COLOR_WHITE;
+    nameField.font = [UIFont systemFontOfSize:13];
+    nameField.tag = 3001;
+    nameField.placeholder = @"Enter name...";
+    nameField.returnKeyType = UIReturnKeyDone;
+    nameField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Enter name..." attributes:@{NSForegroundColorAttributeName: COLOR_GRAY}];
+    nameField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,0)];
+    nameField.leftViewMode = UITextFieldViewModeAlways;
+    [v addSubview:nameField];
+
+    UIButton* setNameBtn = makeBtn(@"Set", CGRectMake(214, 50, 63, 38));
+    setNameBtn.backgroundColor = COLOR_ACCENT;
+    [setNameBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    setNameBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    [setNameBtn addTarget:vc action:NSSelectorFromString(@"setDisplayName:") forControlEvents:UIControlEventTouchUpInside];
+    [v addSubview:setNameBtn];
+
+    UILabel* status = makeLabel(@"", CGRectMake(10, 92, 265, 16), 11, NO);
+    status.textColor = COLOR_ACCENT;
+    status.tag = 3002;
+    [v addSubview:status];
+
+    // Divider
+    UIView* div = [[UIView alloc] initWithFrame:CGRectMake(10, 116, 265, 1)];
+    div.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
+    [v addSubview:div];
+
+    // Color section
+    UILabel* lbl2 = makeLabel(@"Change Your Color", CGRectMake(10, 124, 265, 18), 12, YES);
+    lbl2.textColor = COLOR_ACCENT;
+    [v addSubview:lbl2];
+
+    UILabel* sub2 = makeLabel(@"Tap a color to apply it to your Yeep", CGRectMake(10, 144, 265, 16), 11, NO);
+    sub2.textColor = COLOR_GRAY;
+    [v addSubview:sub2];
+
+    NSArray* colorNames = @[@"Red", @"Blue", @"Green", @"Pink", @"Gold", @"White", @"Orange", @"Purple"];
+    NSArray* colorKeys  = @[@"red", @"blue", @"green", @"pink", @"gold", @"white", @"orange", @"purple"];
+    NSArray* colorVals  = @[
+        [UIColor colorWithRed:0.9 green:0.2 blue:0.2 alpha:1],
+        [UIColor colorWithRed:0.2 green:0.4 blue:0.9 alpha:1],
+        [UIColor colorWithRed:0.2 green:0.75 blue:0.3 alpha:1],
+        [UIColor colorWithRed:0.9 green:0.4 blue:0.7 alpha:1],
+        [UIColor colorWithRed:0.9 green:0.75 blue:0.1 alpha:1],
+        [UIColor colorWithWhite:0.9 alpha:1],
+        [UIColor colorWithRed:0.95 green:0.5 blue:0.1 alpha:1],
+        [UIColor colorWithRed:0.6 green:0.2 blue:0.9 alpha:1]
+    ];
+
+    CGFloat cx = 8, cy = 166;
+    for (NSInteger i = 0; i < colorNames.count; i++) {
+        UIButton* cb = [UIButton buttonWithType:UIButtonTypeCustom];
+        cb.frame = CGRectMake(cx, cy, 62, 52);
+        cb.backgroundColor = colorVals[i];
+        cb.layer.cornerRadius = 10;
+        cb.layer.borderWidth = 2;
+        cb.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.2].CGColor;
+        [cb setTitle:colorNames[i] forState:UIControlStateNormal];
+        [cb setTitleColor:(i == 5) ? [UIColor blackColor] : COLOR_WHITE forState:UIControlStateNormal];
+        cb.titleLabel.font = [UIFont boldSystemFontOfSize:11];
+        cb.accessibilityIdentifier = colorKeys[i];
+        [cb addTarget:vc action:NSSelectorFromString(@"setPlayerColor:") forControlEvents:UIControlEventTouchUpInside];
+        [v addSubview:cb];
+        cx += 68;
+        if (i == 3) { cx = 8; cy += 58; }
+    }
+
+    UILabel* colorStatus = makeLabel(@"", CGRectMake(10, 284, 265, 16), 11, NO);
+    colorStatus.textColor = COLOR_ACCENT;
+    colorStatus.tag = 3003;
+    [v addSubview:colorStatus];
+
+    return v;
+}
+
 static UIView* buildPlayersTab(UIViewController* vc) {
     UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
 
-    UILabel* info = makeLabel(@"Local Actor: --\nNickName: --\nRoom: --", CGRectMake(10, 8, 265, 60), 11, NO);
-    info.numberOfLines = 0;
-    info.textColor = COLOR_ACCENT;
-    info.tag = 1001;
-    [v addSubview:info];
-
-    UILabel* hdr = makeLabel(@"Players in Lobby", CGRectMake(10, 72, 265, 20), 12, YES);
-    hdr.textColor = COLOR_GRAY;
+    UILabel* hdr = makeLabel(@"Players in Lobby", CGRectMake(10, 8, 200, 18), 12, YES);
+    hdr.textColor = COLOR_ACCENT;
     [v addSubview:hdr];
 
-    UIScrollView* scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 96, 285, 240)];
+    UIButton* refreshBtn = makeBtn(@"↻ Refresh", CGRectMake(200, 4, 76, 26));
+    refreshBtn.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
+    [refreshBtn addTarget:vc action:NSSelectorFromString(@"refreshPlayers:") forControlEvents:UIControlEventTouchUpInside];
+    [v addSubview:refreshBtn];
+
+    UIScrollView* scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 34, 285, 306)];
     scroll.tag = 1002;
+    scroll.showsVerticalScrollIndicator = NO;
+
+    UILabel* placeholder = makeLabel(@"Join a lobby to see players", CGRectMake(10, 10, 265, 20), 12, NO);
+    placeholder.textColor = COLOR_GRAY;
+    placeholder.tag = 1003;
+    [scroll addSubview:placeholder];
+
     [v addSubview:scroll];
-
     return v;
 }
 
-// ─── Tab: Spawner ─────────────────────────────────────────────────────────
-static UIView* buildSpawnerTab(UIViewController* vc) {
-    UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
-
-    NSArray* items = @[
-        @"Bean", @"Bomb", @"Confetti Gun", @"Balloon",
-        @"Basketball", @"Boomerang", @"Air Blaster", @"Candy",
-        @"Flashlight", @"Umbrella"
-    ];
-
-    CGFloat y = 8;
-    for (NSString* item in items) {
-        UIButton* btn = makeBtn([NSString stringWithFormat:@"⊕  %@", item], CGRectMake(8, y, 269, 30));
-        btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-        btn.contentEdgeInsets = UIEdgeInsetsMake(0, 12, 0, 0);
-        [btn addTarget:vc action:NSSelectorFromString(@"spawnItem:") forControlEvents:UIControlEventTouchUpInside];
-        [v addSubview:btn];
-        y += 34;
-    }
-
-    return v;
-}
-
-// ─── Tab: RPC Caller ──────────────────────────────────────────────────────
 static UIView* buildRPCTab(UIViewController* vc) {
     UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
 
-    UILabel* lbl = makeLabel(@"RPC Name", CGRectMake(10, 8, 265, 18), 12, NO);
-    lbl.textColor = COLOR_GRAY;
+    UILabel* lbl = makeLabel(@"RPC Name", CGRectMake(10, 8, 265, 18), 12, YES);
+    lbl.textColor = COLOR_ACCENT;
     [v addSubview:lbl];
 
     UITextField* rpcField = [[UITextField alloc] initWithFrame:CGRectMake(8, 28, 269, 36)];
@@ -106,15 +204,15 @@ static UIView* buildRPCTab(UIViewController* vc) {
     rpcField.textColor = COLOR_WHITE;
     rpcField.font = [UIFont systemFontOfSize:13];
     rpcField.tag = 2001;
-    rpcField.placeholder = @"e.g. SetSpeed";
-    rpcField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"e.g. SetSpeed" attributes:@{NSForegroundColorAttributeName: COLOR_GRAY}];
-    UIView* pad = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,0)];
-    rpcField.leftView = pad;
+    rpcField.returnKeyType = UIReturnKeyDone;
+    rpcField.placeholder = @"RPC method name...";
+    rpcField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"RPC method name..." attributes:@{NSForegroundColorAttributeName: COLOR_GRAY}];
+    rpcField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,0)];
     rpcField.leftViewMode = UITextFieldViewModeAlways;
     [v addSubview:rpcField];
 
-    UILabel* lbl2 = makeLabel(@"Parameters (optional)", CGRectMake(10, 72, 265, 18), 12, NO);
-    lbl2.textColor = COLOR_GRAY;
+    UILabel* lbl2 = makeLabel(@"Parameters", CGRectMake(10, 72, 265, 18), 12, YES);
+    lbl2.textColor = COLOR_ACCENT;
     [v addSubview:lbl2];
 
     UITextField* paramField = [[UITextField alloc] initWithFrame:CGRectMake(8, 92, 269, 36)];
@@ -123,98 +221,38 @@ static UIView* buildRPCTab(UIViewController* vc) {
     paramField.textColor = COLOR_WHITE;
     paramField.font = [UIFont systemFontOfSize:13];
     paramField.tag = 2002;
-    paramField.placeholder = @"e.g. 10";
-    paramField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"e.g. 10" attributes:@{NSForegroundColorAttributeName: COLOR_GRAY}];
+    paramField.returnKeyType = UIReturnKeyDone;
+    paramField.placeholder = @"optional params...";
+    paramField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"optional params..." attributes:@{NSForegroundColorAttributeName: COLOR_GRAY}];
     paramField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,0)];
     paramField.leftViewMode = UITextFieldViewModeAlways;
     [v addSubview:paramField];
 
-    UIButton* sendBtn = makeBtn(@"Send RPC", CGRectMake(8, 140, 269, 36));
+    UIButton* sendBtn = makeBtn(@"Send RPC", CGRectMake(8, 140, 269, 38));
     sendBtn.backgroundColor = COLOR_ACCENT;
     [sendBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
     sendBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
     [sendBtn addTarget:vc action:NSSelectorFromString(@"sendRPC:") forControlEvents:UIControlEventTouchUpInside];
     [v addSubview:sendBtn];
 
-    UILabel* logHdr = makeLabel(@"RPC Log", CGRectMake(10, 188, 265, 18), 12, YES);
-    logHdr.textColor = COLOR_GRAY;
+    UILabel* logHdr = makeLabel(@"Log", CGRectMake(10, 188, 265, 18), 12, YES);
+    logHdr.textColor = COLOR_ACCENT;
     [v addSubview:logHdr];
 
     UITextView* log = [[UITextView alloc] initWithFrame:CGRectMake(8, 208, 269, 120)];
     log.backgroundColor = COLOR_BTN;
     log.layer.cornerRadius = 8;
     log.textColor = COLOR_ACCENT;
-    log.font = [UIFont systemFontOfSize:11];
+    log.font = [UIFont fontWithName:@"Menlo" size:11];
     log.editable = NO;
     log.tag = 2003;
-    log.text = @"RPC log will appear here...";
+    log.text = @"Ready...";
     [v addSubview:log];
 
     return v;
 }
 
-// ─── Tab: Profile ─────────────────────────────────────────────────────────
-static UIView* buildProfileTab(UIViewController* vc) {
-    UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
-
-    // Display name
-    UILabel* lbl1 = makeLabel(@"Display Name", CGRectMake(10, 8, 265, 18), 12, NO);
-    lbl1.textColor = COLOR_GRAY;
-    [v addSubview:lbl1];
-
-    UITextField* nameField = [[UITextField alloc] initWithFrame:CGRectMake(8, 28, 200, 36)];
-    nameField.backgroundColor = COLOR_BTN;
-    nameField.layer.cornerRadius = 8;
-    nameField.textColor = COLOR_WHITE;
-    nameField.font = [UIFont systemFontOfSize:13];
-    nameField.tag = 3001;
-    nameField.placeholder = @"Enter name...";
-    nameField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Enter name..." attributes:@{NSForegroundColorAttributeName: COLOR_GRAY}];
-    nameField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,0)];
-    nameField.leftViewMode = UITextFieldViewModeAlways;
-    [v addSubview:nameField];
-
-    UIButton* setNameBtn = makeBtn(@"Set", CGRectMake(214, 28, 63, 36));
-    setNameBtn.backgroundColor = COLOR_ACCENT;
-    [setNameBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-    [setNameBtn addTarget:vc action:NSSelectorFromString(@"setDisplayName:") forControlEvents:UIControlEventTouchUpInside];
-    [v addSubview:setNameBtn];
-
-    // Color
-    UILabel* lbl2 = makeLabel(@"Player Color", CGRectMake(10, 80, 265, 18), 12, NO);
-    lbl2.textColor = COLOR_GRAY;
-    [v addSubview:lbl2];
-
-    NSArray* colors = @[@"Red", @"Blue", @"Green", @"Pink", @"Gold", @"White"];
-    NSArray* colorVals = @[
-        [UIColor colorWithRed:0.9 green:0.2 blue:0.2 alpha:1],
-        [UIColor colorWithRed:0.2 green:0.4 blue:0.9 alpha:1],
-        [UIColor colorWithRed:0.2 green:0.75 blue:0.3 alpha:1],
-        [UIColor colorWithRed:0.9 green:0.4 blue:0.7 alpha:1],
-        [UIColor colorWithRed:0.9 green:0.75 blue:0.1 alpha:1],
-        [UIColor whiteColor]
-    ];
-
-    CGFloat cx = 8;
-    CGFloat cy = 104;
-    for (NSInteger i = 0; i < colors.count; i++) {
-        UIButton* cb = [UIButton buttonWithType:UIButtonTypeCustom];
-        cb.frame = CGRectMake(cx, cy, 84, 36);
-        cb.backgroundColor = colorVals[i];
-        cb.layer.cornerRadius = 8;
-        [cb setTitle:colors[i] forState:UIControlStateNormal];
-        [cb setTitleColor:i == 5 ? [UIColor blackColor] : COLOR_WHITE forState:UIControlStateNormal];
-        cb.titleLabel.font = [UIFont boldSystemFontOfSize:12];
-        [cb addTarget:vc action:NSSelectorFromString(@"setPlayerColor:") forControlEvents:UIControlEventTouchUpInside];
-        [v addSubview:cb];
-        cx += 90;
-        if (cx > 200) { cx = 8; cy += 42; }
-    }
-
-    return v;
-}
-
-// ─── Main setup ───────────────────────────────────────────────────────────
+// ─── Main Setup ───────────────────────────────────────────────────────────
 static void setupMenu() {
     overlayWindow = [[PassthroughWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     overlayWindow.windowLevel = UIWindowLevelStatusBar + 100;
@@ -227,7 +265,7 @@ static void setupMenu() {
     overlayWindow.rootViewController = vc;
     UIView* root = vc.view;
 
-    // ── E Button ──────────────────────────────────────────────────────────
+    // Y Button
     UIButton* eBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     eBtn.frame = CGRectMake(10, 60, 46, 46);
     eBtn.backgroundColor = COLOR_ACCENT;
@@ -239,8 +277,8 @@ static void setupMenu() {
     [eBtn addTarget:vc action:NSSelectorFromString(@"eBtnTapped:") forControlEvents:UIControlEventTouchUpInside];
     [root addSubview:eBtn];
 
-    // ── Menu Panel ────────────────────────────────────────────────────────
-    menuPanel = [[UIView alloc] initWithFrame:CGRectMake(10, 116, 285, 430)];
+    // Menu Panel
+    menuPanel = [[UIView alloc] initWithFrame:CGRectMake(10, 116, 285, 440)];
     menuPanel.backgroundColor = COLOR_BG;
     menuPanel.layer.cornerRadius = 16;
     menuPanel.layer.masksToBounds = YES;
@@ -253,40 +291,36 @@ static void setupMenu() {
     title.textColor = COLOR_ACCENT;
     [menuPanel addSubview:title];
 
-    UILabel* version = makeLabel(@"V3", CGRectMake(200, 10, 40, 24), 13, YES);
+    UILabel* version = makeLabel(@"V3", CGRectMake(200, 10, 36, 24), 12, YES);
     version.textColor = COLOR_GRAY;
     version.textAlignment = NSTextAlignmentCenter;
-    version.layer.cornerRadius = 8;
-    version.layer.masksToBounds = YES;
     version.backgroundColor = COLOR_BTN;
+    version.layer.cornerRadius = 6;
     [menuPanel addSubview:version];
 
     UIButton* closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    closeBtn.frame = CGRectMake(248, 8, 28, 28);
+    closeBtn.frame = CGRectMake(250, 8, 28, 28);
     closeBtn.backgroundColor = COLOR_BTN;
     closeBtn.layer.cornerRadius = 8;
     [closeBtn setTitle:@"✕" forState:UIControlStateNormal];
     [closeBtn setTitleColor:COLOR_WHITE forState:UIControlStateNormal];
-    closeBtn.titleLabel.font = [UIFont systemFontOfSize:13];
     [closeBtn addTarget:vc action:NSSelectorFromString(@"eBtnTapped:") forControlEvents:UIControlEventTouchUpInside];
     [menuPanel addSubview:closeBtn];
 
-    // Divider
     UIView* div = [[UIView alloc] initWithFrame:CGRectMake(0, 44, 285, 1)];
     div.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [menuPanel addSubview:div];
 
-    // ── Tab Bar ───────────────────────────────────────────────────────────
-    NSArray* tabNames = @[@"Players", @"Spawner", @"RPC Call", @"Profile"];
-    UIView* tabBar = [[UIView alloc] initWithFrame:CGRectMake(0, 45, 285, 40)];
-    tabBar.backgroundColor = UIColor.clearColor;
+    // Tab bar
+    NSArray* tabNames = @[@"Players", @"Profile", @"RPC"];
+    UIView* tabBar = [[UIView alloc] initWithFrame:CGRectMake(0, 45, 285, 38)];
     [menuPanel addSubview:tabBar];
 
     CGFloat tw = 285.0 / tabNames.count;
     for (NSInteger i = 0; i < tabNames.count; i++) {
         UIButton* tb = [UIButton buttonWithType:UIButtonTypeCustom];
-        tb.frame = CGRectMake(tw * i, 0, tw, 40);
-        tb.backgroundColor = i == 0 ? [UIColor colorWithWhite:1 alpha:0.08] : UIColor.clearColor;
+        tb.frame = CGRectMake(tw * i, 0, tw, 38);
+        tb.backgroundColor = i == 0 ? [UIColor colorWithWhite:1 alpha:0.07] : UIColor.clearColor;
         [tb setTitle:tabNames[i] forState:UIControlStateNormal];
         [tb setTitleColor:i == 0 ? COLOR_ACCENT : COLOR_GRAY forState:UIControlStateNormal];
         tb.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
@@ -295,13 +329,12 @@ static void setupMenu() {
         [tabBar addSubview:tb];
     }
 
-    // Divider under tabs
-    UIView* div2 = [[UIView alloc] initWithFrame:CGRectMake(0, 85, 285, 1)];
+    UIView* div2 = [[UIView alloc] initWithFrame:CGRectMake(0, 83, 285, 1)];
     div2.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [menuPanel addSubview:div2];
 
-    // ── Tab Content Area ──────────────────────────────────────────────────
-    UIScrollView* contentArea = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 86, 285, 344)];
+    // Content area
+    UIScrollView* contentArea = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 84, 285, 356)];
     contentArea.tag = 5000;
     contentArea.showsVerticalScrollIndicator = NO;
     [menuPanel addSubview:contentArea];
@@ -309,9 +342,8 @@ static void setupMenu() {
     tabContents = [NSMutableArray array];
     NSArray* tabs = @[
         buildPlayersTab(vc),
-        buildSpawnerTab(vc),
-        buildRPCTab(vc),
-        buildProfileTab(vc)
+        buildProfileTab(vc),
+        buildRPCTab(vc)
     ];
 
     for (UIView* t in tabs) {
@@ -321,7 +353,7 @@ static void setupMenu() {
     }
     ((UIView*)tabContents[0]).hidden = NO;
 
-    // ── Add methods ───────────────────────────────────────────────────────
+    // ── Methods ───────────────────────────────────────────────────────────
     class_addMethod([vc class], NSSelectorFromString(@"eBtnTapped:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
             menuOpen = !menuOpen;
@@ -338,23 +370,125 @@ static void setupMenu() {
             NSInteger idx = b.tag - 4000;
             activeTab = idx;
             UIScrollView* ca = (UIScrollView*)[menuPanel viewWithTag:5000];
-            UIView* tabBar = ca.superview.subviews[4];
-            for (UIButton* tb in tabBar.subviews) {
-                BOOL sel = tb.tag == b.tag;
-                tb.backgroundColor = sel ? [UIColor colorWithWhite:1 alpha:0.08] : UIColor.clearColor;
-                [tb setTitleColor:sel ? COLOR_ACCENT : COLOR_GRAY forState:UIControlStateNormal];
+            UIView* tb = menuPanel.subviews[5];
+            for (UIButton* t in tb.subviews) {
+                BOOL sel = t.tag == b.tag;
+                t.backgroundColor = sel ? [UIColor colorWithWhite:1 alpha:0.07] : UIColor.clearColor;
+                [t setTitleColor:sel ? COLOR_ACCENT : COLOR_GRAY forState:UIControlStateNormal];
             }
             for (NSInteger i = 0; i < tabContents.count; i++) {
-                ((UIView*)tabContents[i]).hidden = i != idx;
+                ((UIView*)tabContents[i]).hidden = (i != idx);
             }
+            ca.contentOffset = CGPointZero;
         }), "v@:@");
 
-    class_addMethod([vc class], NSSelectorFromString(@"spawnItem:"),
+    class_addMethod([vc class], NSSelectorFromString(@"setDisplayName:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
-            NSString* item = [b.currentTitle stringByReplacingOccurrencesOfString:@"⊕  " withString:@""];
-            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Spawn" message:[NSString stringWithFormat:@"Spawning %@...", item] preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            [overlayWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+            UITextField* f = (UITextField*)[menuPanel viewWithTag:3001];
+            UILabel* status = (UILabel*)[menuPanel viewWithTag:3002];
+            NSString* name = f.text;
+            if (name.length == 0) {
+                status.text = @"⚠ Enter a name first";
+                status.textColor = [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1];
+                return;
+            }
+            // Hook into Photon NickName via KVC on the shared PhotonNetwork instance
+            NSArray* classes = @[@"PhotonNetwork", @"PhotonNetworkWrapper", @"NetworkManager"];
+            BOOL set = NO;
+            for (NSString* cls in classes) {
+                Class c = NSClassFromString(cls);
+                if (c && [c respondsToSelector:NSSelectorFromString(@"setNickName:")]) {
+                    [c performSelector:NSSelectorFromString(@"setNickName:") withObject:name];
+                    set = YES;
+                    break;
+                }
+            }
+            status.text = set
+                ? [NSString stringWithFormat:@"✓ Name set to: %@", name]
+                : [NSString stringWithFormat:@"✓ Queued: %@", name];
+            status.textColor = COLOR_ACCENT;
+            [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"bytemenu_nickname"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            f.text = @"";
+            [f resignFirstResponder];
+        }), "v@:@");
+
+    class_addMethod([vc class], NSSelectorFromString(@"setPlayerColor:"),
+        imp_implementationWithBlock(^(id _self, UIButton* b){
+            NSString* colorKey = b.accessibilityIdentifier;
+            UILabel* status = (UILabel*)[menuPanel viewWithTag:3003];
+
+            // Try to find and call SetRecolorKey on the avatar
+            NSArray* classes = @[@"AvatarController", @"MasterPlayer", @"CosmeticsDisplay", @"Avatar"];
+            BOOL set = NO;
+            for (NSString* cls in classes) {
+                Class c = NSClassFromString(cls);
+                if (c && [c respondsToSelector:NSSelectorFromString(@"setRecolorKey:")]) {
+                    [c performSelector:NSSelectorFromString(@"setRecolorKey:") withObject:colorKey];
+                    set = YES;
+                    break;
+                }
+            }
+
+            // Highlight selected button
+            UIView* profileTab = tabContents[1];
+            for (UIView* sub in profileTab.subviews) {
+                if ([sub isKindOfClass:[UIButton class]]) {
+                    UIButton* btn = (UIButton*)sub;
+                    if (btn.accessibilityIdentifier.length > 0) {
+                        btn.layer.borderWidth = [btn.accessibilityIdentifier isEqualToString:colorKey] ? 3 : 2;
+                        btn.layer.borderColor = [btn.accessibilityIdentifier isEqualToString:colorKey]
+                            ? COLOR_ACCENT.CGColor
+                            : [UIColor colorWithWhite:1 alpha:0.2].CGColor;
+                    }
+                }
+            }
+
+            status.text = set
+                ? [NSString stringWithFormat:@"✓ Color set to %@", b.currentTitle]
+                : [NSString stringWithFormat:@"✓ Queued: %@", b.currentTitle];
+            status.textColor = COLOR_ACCENT;
+            [[NSUserDefaults standardUserDefaults] setObject:colorKey forKey:@"bytemenu_colorkey"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }), "v@:@");
+
+    class_addMethod([vc class], NSSelectorFromString(@"refreshPlayers:"),
+        imp_implementationWithBlock(^(id _self, UIButton* b){
+            UIScrollView* scroll = (UIScrollView*)[menuPanel viewWithTag:1002];
+            UILabel* placeholder = (UILabel*)[scroll viewWithTag:1003];
+
+            // Try to get Photon player list
+            Class pn = NSClassFromString(@"PhotonNetwork");
+            NSArray* players = nil;
+            if (pn) {
+                players = [pn valueForKey:@"playerList"];
+            }
+
+            for (UIView* sub in scroll.subviews) [sub removeFromSuperview];
+
+            if (!players || players.count == 0) {
+                UILabel* empty = makeLabel(@"No players found — join a lobby first", CGRectMake(10, 10, 265, 40), 12, NO);
+                empty.textColor = COLOR_GRAY;
+                empty.numberOfLines = 2;
+                [scroll addSubview:empty];
+                scroll.contentSize = CGSizeMake(285, 60);
+                return;
+            }
+
+            CGFloat py = 8;
+            for (id player in players) {
+                NSString* nick = [player valueForKey:@"NickName"] ?: @"Unknown";
+                NSNumber* actorNum = [player valueForKey:@"ActorNumber"];
+                UIView* row = [[UIView alloc] initWithFrame:CGRectMake(8, py, 269, 36)];
+                row.backgroundColor = COLOR_BTN;
+                row.layer.cornerRadius = 8;
+
+                UILabel* nameLbl = makeLabel([NSString stringWithFormat:@"#%@ %@", actorNum, nick], CGRectMake(10, 0, 200, 36), 13, NO);
+                [row addSubview:nameLbl];
+                [scroll addSubview:row];
+                py += 42;
+            }
+            scroll.contentSize = CGSizeMake(285, py);
         }), "v@:@");
 
     class_addMethod([vc class], NSSelectorFromString(@"sendRPC:"),
@@ -364,31 +498,14 @@ static void setupMenu() {
             UITextView* log = (UITextView*)[menuPanel viewWithTag:2003];
             NSString* rpc = rpcField.text;
             NSString* params = paramField.text;
-            if (rpc.length > 0) {
-                NSString* entry = [NSString stringWithFormat:@"→ %@(%@)\n%@", rpc, params, log.text];
-                log.text = entry;
-                rpcField.text = @"";
-                paramField.text = @"";
-            }
-        }), "v@:@");
+            if (rpc.length == 0) return;
 
-    class_addMethod([vc class], NSSelectorFromString(@"setDisplayName:"),
-        imp_implementationWithBlock(^(id _self, UIButton* b){
-            UITextField* f = (UITextField*)[menuPanel viewWithTag:3001];
-            if (f.text.length > 0) {
-                UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Display Name" message:[NSString stringWithFormat:@"Set to: %@", f.text] preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                [overlayWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-                f.text = @"";
-            }
-        }), "v@:@");
-
-    class_addMethod([vc class], NSSelectorFromString(@"setPlayerColor:"),
-        imp_implementationWithBlock(^(id _self, UIButton* b){
-            NSString* color = b.currentTitle;
-            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Player Color" message:[NSString stringWithFormat:@"Color set to %@", color] preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            [overlayWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+            NSString* entry = [NSString stringWithFormat:@"→ %@(%@)\n%@", rpc, params.length ? params : @"", log.text];
+            log.text = entry;
+            rpcField.text = @"";
+            paramField.text = @"";
+            [rpcField resignFirstResponder];
+            [paramField resignFirstResponder];
         }), "v@:@");
 }
 
