@@ -61,7 +61,6 @@ static UIView* buildPlayersTab(UIViewController* vc) {
 
     UILabel* placeholder = makeLabel(@"Tap Refresh to load players", CGRectMake(10, 10, 265, 20), 12, NO);
     placeholder.textColor = COLOR_GRAY;
-    placeholder.tag = 1003;
     [scroll addSubview:placeholder];
     [v addSubview:scroll];
     return v;
@@ -234,6 +233,33 @@ static UIView* buildRPCTab(UIViewController* vc) {
     return v;
 }
 
+static UIView* buildDebugTab(UIViewController* vc) {
+    UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
+
+    UILabel* hdr = makeLabel(@"Class Scanner", CGRectMake(10, 8, 200, 18), 12, YES);
+    hdr.textColor = COLOR_ACCENT;
+    [v addSubview:hdr];
+
+    UIButton* scanBtn = makeBtn(@"⚡ Scan", CGRectMake(200, 4, 76, 26));
+    scanBtn.backgroundColor = COLOR_ACCENT;
+    [scanBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    scanBtn.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBold];
+    [scanBtn addTarget:vc action:NSSelectorFromString(@"runDebugScan:") forControlEvents:UIControlEventTouchUpInside];
+    [v addSubview:scanBtn];
+
+    UITextView* output = [[UITextView alloc] initWithFrame:CGRectMake(8, 36, 269, 295)];
+    output.backgroundColor = COLOR_BTN;
+    output.layer.cornerRadius = 8;
+    output.textColor = COLOR_ACCENT;
+    output.font = [UIFont fontWithName:@"Menlo" size:10];
+    output.editable = NO;
+    output.tag = 9001;
+    output.text = @"Tap Scan after joining a lobby...\n\nThis will find the real class names we need to hook into.";
+    [v addSubview:output];
+
+    return v;
+}
+
 static void setupMenu() {
     overlayWindow = [[PassthroughWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     overlayWindow.windowLevel = UIWindowLevelStatusBar + 100;
@@ -289,7 +315,7 @@ static void setupMenu() {
     div.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
     [menuPanel addSubview:div];
 
-    NSArray* tabNames = @[@"Players", @"Profile", @"RPC"];
+    NSArray* tabNames = @[@"Players", @"Profile", @"RPC", @"Debug"];
     UIView* tabBar = [[UIView alloc] initWithFrame:CGRectMake(0, 45, 285, 38)];
     [menuPanel addSubview:tabBar];
 
@@ -300,7 +326,7 @@ static void setupMenu() {
         tb.backgroundColor = i == 0 ? [UIColor colorWithWhite:1 alpha:0.07] : UIColor.clearColor;
         [tb setTitle:tabNames[i] forState:UIControlStateNormal];
         [tb setTitleColor:i == 0 ? COLOR_ACCENT : COLOR_GRAY forState:UIControlStateNormal];
-        tb.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+        tb.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
         tb.tag = 4000 + i;
         [tb addTarget:vc action:NSSelectorFromString(@"tabTapped:") forControlEvents:UIControlEventTouchUpInside];
         [tabBar addSubview:tb];
@@ -319,7 +345,8 @@ static void setupMenu() {
     NSArray* tabs = @[
         buildPlayersTab(vc),
         buildProfileTab(vc),
-        buildRPCTab(vc)
+        buildRPCTab(vc),
+        buildDebugTab(vc)
     ];
 
     for (UIView* t in tabs) {
@@ -450,8 +477,6 @@ static void setupMenu() {
             st.textColor = done
                 ? [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1]
                 : COLOR_ACCENT;
-            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"bytemenu_emptyYeep"];
-            [[NSUserDefaults standardUserDefaults] synchronize];
         }), "v@:@");
 
     class_addMethod([vc class], NSSelectorFromString(@"refreshPlayers:"),
@@ -460,47 +485,25 @@ static void setupMenu() {
             for (UIView* sub in scroll.subviews) [sub removeFromSuperview];
 
             NSMutableArray* foundPlayers = [NSMutableArray array];
-            NSArray* photonClassNames = @[
+            NSArray* classNames = @[
                 @"PhotonNetwork", @"LoadBalancingClient",
-                @"PhotonPlayer", @"Player", @"RoomInfo"
+                @"PhotonPlayer", @"Player", @"RoomInfo",
+                @"NetworkManager", @"PhotonNetworkingMessage"
             ];
 
-            for (NSString* cls in photonClassNames) {
+            for (NSString* cls in classNames) {
                 Class c = NSClassFromString(cls);
                 if (!c) continue;
                 @try {
-                    id val = [c valueForKey:@"playerList"];
-                    if ([val isKindOfClass:[NSArray class]] && ((NSArray*)val).count > 0) {
-                        [foundPlayers addObjectsFromArray:(NSArray*)val];
-                        break;
+                    for (NSString* key in @[@"playerList", @"PlayerList", @"players", @"Players"]) {
+                        id val = [c valueForKey:key];
+                        if ([val isKindOfClass:[NSArray class]] && ((NSArray*)val).count > 0) {
+                            [foundPlayers addObjectsFromArray:(NSArray*)val];
+                            break;
+                        }
                     }
-                    val = [c valueForKey:@"PlayerList"];
-                    if ([val isKindOfClass:[NSArray class]] && ((NSArray*)val).count > 0) {
-                        [foundPlayers addObjectsFromArray:(NSArray*)val];
-                        break;
-                    }
+                    if (foundPlayers.count > 0) break;
                 } @catch (NSException* e) {}
-            }
-
-            if (foundPlayers.count == 0) {
-                unsigned int count;
-                Class* classes = objc_copyClassList(&count);
-                for (unsigned int i = 0; i < count; i++) {
-                    NSString* name = NSStringFromClass(classes[i]);
-                    if ([name containsString:@"Player"] || [name containsString:@"Photon"]) {
-                        @try {
-                            id instance = [classes[i] valueForKey:@"instance"];
-                            if (!instance) continue;
-                            id list = [instance valueForKey:@"playerList"];
-                            if (!list) list = [instance valueForKey:@"PlayerList"];
-                            if ([list isKindOfClass:[NSArray class]] && ((NSArray*)list).count > 0) {
-                                [foundPlayers addObjectsFromArray:(NSArray*)list];
-                                break;
-                            }
-                        } @catch (NSException* e) {}
-                    }
-                }
-                free(classes);
             }
 
             if (foundPlayers.count == 0) {
@@ -518,15 +521,62 @@ static void setupMenu() {
                 NSNumber* actorNum = @0;
                 @try { nick = [player valueForKey:@"NickName"] ?: @"Unknown"; } @catch(NSException* e) {}
                 @try { actorNum = [player valueForKey:@"ActorNumber"] ?: @0; } @catch(NSException* e) {}
-                UIView* row = [[UIView alloc] initWithFrame:CGRectMake(8, py, 269, 36)];
+                NSArray* parts = [nick componentsSeparatedByString:@"$"];
+                NSString* displayName = parts.count >= 3 ? parts[2] : nick;
+                UIView* row = [[UIView alloc] initWithFrame:CGRectMake(8, py, 269, 40)];
                 row.backgroundColor = COLOR_BTN;
                 row.layer.cornerRadius = 8;
-                UILabel* nameLbl = makeLabel([NSString stringWithFormat:@"#%@  %@", actorNum, nick], CGRectMake(10, 0, 249, 36), 13, NO);
+                UILabel* nameLbl = makeLabel(displayName, CGRectMake(10, 2, 249, 18), 13, YES);
+                UILabel* idLbl = makeLabel([NSString stringWithFormat:@"Actor #%@", actorNum], CGRectMake(10, 20, 249, 14), 10, NO);
+                idLbl.textColor = COLOR_GRAY;
                 [row addSubview:nameLbl];
+                [row addSubview:idLbl];
                 [scroll addSubview:row];
-                py += 42;
+                py += 46;
             }
             scroll.contentSize = CGSizeMake(285, py);
+        }), "v@:@");
+
+    class_addMethod([vc class], NSSelectorFromString(@"runDebugScan:"),
+        imp_implementationWithBlock(^(id _self, UIButton* b){
+            UITextView* output = (UITextView*)[menuPanel viewWithTag:9001];
+            NSMutableString* result = [NSMutableString string];
+
+            [result appendString:@"=== SCANNING CLASSES ===\n\n"];
+
+            // Safe targeted scan - no objc_copyClassList
+            NSArray* targets = @[
+                @"PhotonNetwork", @"LoadBalancingClient", @"Player",
+                @"PhotonPlayer", @"Room", @"RoomInfo", @"NetworkManager",
+                @"AccountOnlineManager", @"AccountManager", @"MasterPlayer",
+                @"AvatarController", @"CosmeticsDisplay", @"CosmeticsManager",
+                @"PlayerManager", @"LocalPlayer", @"PhotonNetworkingMessage"
+            ];
+
+            for (NSString* cls in targets) {
+                Class c = NSClassFromString(cls);
+                if (!c) continue;
+                [result appendFormat:@"✓ FOUND: %@\n", cls];
+
+                // Check for player list
+                for (NSString* key in @[@"playerList", @"PlayerList", @"players", @"Players", @"allPlayers"]) {
+                    @try {
+                        id val = [c valueForKey:key];
+                        if (val) [result appendFormat:@"  → %@: %@\n", key, NSStringFromClass([val class])];
+                    } @catch(NSException* e) {}
+                }
+
+                // Check for NickName
+                for (NSString* key in @[@"NickName", @"nickName", @"displayName", @"userName"]) {
+                    @try {
+                        id val = [c valueForKey:key];
+                        if (val) [result appendFormat:@"  → %@: %@\n", key, val];
+                    } @catch(NSException* e) {}
+                }
+            }
+
+            [result appendString:@"\n=== DONE ==="];
+            output.text = result;
         }), "v@:@");
 
     class_addMethod([vc class], NSSelectorFromString(@"sendRPC:"),
