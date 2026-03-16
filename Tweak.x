@@ -91,15 +91,12 @@ static void updatePlayerListUI() {
 
 static UIView* buildPlayersTab(UIViewController* vc) {
     UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
-
     UILabel* hdr = makeLabel(@"Players in Lobby", CGRectMake(10, 8, 160, 18), 12, YES);
     hdr.textColor = COLOR_ACCENT;
     [v addSubview:hdr];
-
     UILabel* autoLbl = makeLabel(@"Auto-updates", CGRectMake(170, 10, 100, 14), 10, NO);
     autoLbl.textColor = COLOR_GRAY;
     [v addSubview:autoLbl];
-
     UIScrollView* scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 30, 285, 310)];
     scroll.tag = 1002;
     scroll.showsVerticalScrollIndicator = NO;
@@ -118,7 +115,7 @@ static UIView* buildProfileTab(UIViewController* vc) {
     lbl1.textColor = COLOR_ACCENT;
     [v addSubview:lbl1];
 
-    UILabel* sub1 = makeLabel(@"Applied when you next join or send a packet", CGRectMake(10, 28, 265, 16), 11, NO);
+    UILabel* sub1 = makeLabel(@"Restart app after setting to apply", CGRectMake(10, 28, 265, 16), 11, NO);
     sub1.textColor = COLOR_GRAY;
     [v addSubview:sub1];
 
@@ -236,7 +233,7 @@ static UIView* buildPacketTab(UIViewController* vc) {
     log.font = [UIFont fontWithName:@"Menlo" size:9];
     log.editable = NO;
     log.tag = 6001;
-    log.text = @"Waiting for packets...\n\nJoin a lobby to start capturing.";
+    log.text = @"Waiting for packets...\n\nClose and reopen the app to capture login data.";
     [v addSubview:log];
 
     return v;
@@ -329,7 +326,7 @@ static void setupMenu() {
     tabContents = [NSMutableArray array];
 
     UIView* rpcPlaceholder = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
-    UILabel* rpcLbl = makeLabel(@"RPC tab coming soon", CGRectMake(10, 10, 265, 20), 12, NO);
+    UILabel* rpcLbl = makeLabel(@"RPC tab — coming soon", CGRectMake(10, 10, 265, 20), 12, NO);
     rpcLbl.textColor = COLOR_GRAY;
     [rpcPlaceholder addSubview:rpcLbl];
 
@@ -385,7 +382,7 @@ static void setupMenu() {
                 return;
             }
             pendingNickName = name;
-            st.text = [NSString stringWithFormat:@"✓ Will apply as: %@", name];
+            st.text = [NSString stringWithFormat:@"✓ Set — restart app to apply: %@", name];
             st.textColor = COLOR_ACCENT;
             [[NSUserDefaults standardUserDefaults] setObject:name forKey:@"bytemenu_nickname"];
             [[NSUserDefaults standardUserDefaults] synchronize];
@@ -411,7 +408,7 @@ static void setupMenu() {
             }
             [[NSUserDefaults standardUserDefaults] setObject:colorKey forKey:@"bytemenu_colorkey"];
             [[NSUserDefaults standardUserDefaults] synchronize];
-            st.text = [NSString stringWithFormat:@"✓ Color queued: %@", b.currentTitle];
+            st.text = [NSString stringWithFormat:@"✓ Color saved: %@ — restart to apply", b.currentTitle];
             st.textColor = COLOR_ACCENT;
         }), "v@:@");
 
@@ -420,7 +417,7 @@ static void setupMenu() {
             UILabel* st = (UILabel*)[menuPanel viewWithTag:3004];
             [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"bytemenu_emptyYeep"];
             [[NSUserDefaults standardUserDefaults] synchronize];
-            st.text = @"👻 Will apply on next packet";
+            st.text = @"👻 Saved — restart app to apply";
             st.textColor = [UIColor colorWithRed:1 green:0.4 blue:0.4 alpha:1];
         }), "v@:@");
 
@@ -441,28 +438,70 @@ static void setupMenu() {
         if (!packetLog) return;
         NSString* entry = [NSString stringWithFormat:@"HTTP: %@ %@\n", request.HTTPMethod ?: @"GET", urlStr];
         [packetLog insertObject:entry atIndex:0];
-        if (packetLog.count > 50) [packetLog removeLastObject];
+        if (packetLog.count > 100) [packetLog removeLastObject];
         UITextView* log = (UITextView*)[menuPanel viewWithTag:6001];
         if (log) log.text = [packetLog componentsJoinedByString:@""];
     });
 
     void (^newHandler)(NSData*, NSURLResponse*, NSError*) = ^(NSData* data, NSURLResponse* response, NSError* error) {
-        if (data) {
+        if (data && [urlStr containsString:@"execute-api"]) {
             NSString* body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            if (body && ([body containsString:@"$VR$"] || [body containsString:@"$mobileIOS$"])) {
+            if (body) {
+                NSString* preview = body.length > 800 ? [body substringToIndex:800] : body;
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [capturedPlayers removeAllObjects];
-                    NSArray* tokens = [body componentsSeparatedByString:@"\""];
-                    for (NSString* token in tokens) {
-                        if ([token containsString:@"$VR$"] || [token containsString:@"$mobileIOS$"]) {
-                            NSArray* parts = [token componentsSeparatedByString:@"$"];
-                            if (parts.count >= 3) {
-                                [capturedPlayers addObject:@{@"nick": token, @"actor": @(capturedPlayers.count + 1)}];
+                    if (!packetLog) return;
+                    NSString* entry = [NSString stringWithFormat:@"RESPONSE (%@):\n%@\n---\n", urlStr, preview];
+                    [packetLog insertObject:entry atIndex:0];
+                    UITextView* log = (UITextView*)[menuPanel viewWithTag:6001];
+                    if (log) log.text = [packetLog componentsJoinedByString:@""];
+                });
+
+                NSData* reqBody = request.HTTPBody;
+                if (reqBody) {
+                    NSString* reqStr = [[NSString alloc] initWithData:reqBody encoding:NSUTF8StringEncoding];
+                    if (reqStr) {
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            if (!packetLog) return;
+                            NSString* entry = [NSString stringWithFormat:@"REQUEST (%@):\n%@\n---\n", urlStr, reqStr];
+                            [packetLog insertObject:entry atIndex:0];
+                            UITextView* log = (UITextView*)[menuPanel viewWithTag:6001];
+                            if (log) log.text = [packetLog componentsJoinedByString:@""];
+                        });
+                    }
+                }
+
+                if ([body containsString:@"$VR$"] || [body containsString:@"$mobileIOS$"]) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [capturedPlayers removeAllObjects];
+                        NSArray* tokens = [body componentsSeparatedByString:@"\""];
+                        for (NSString* token in tokens) {
+                            if ([token containsString:@"$VR$"] || [token containsString:@"$mobileIOS$"]) {
+                                NSArray* parts = [token componentsSeparatedByString:@"$"];
+                                if (parts.count >= 3) {
+                                    [capturedPlayers addObject:@{@"nick": token, @"actor": @(capturedPlayers.count + 1)}];
+                                }
                             }
                         }
-                    }
-                    updatePlayerListUI();
-                });
+                        updatePlayerListUI();
+                    });
+                }
+
+                NSString* savedName = [[NSUserDefaults standardUserDefaults] objectForKey:@"bytemenu_nickname"];
+                if (savedName && savedName.length > 0 && [urlStr containsString:@"mobileLogIntoAccount"]) {
+                    @try {
+                        NSMutableDictionary* json = [[NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil] mutableCopy];
+                        if (json) {
+                            for (NSString* key in @[@"displayName", @"nickName", @"username", @"name", @"playerName", @"NickName"]) {
+                                if (json[key]) json[key] = savedName;
+                            }
+                            NSData* modifiedData = [NSJSONSerialization dataWithJSONObject:json options:0 error:nil];
+                            if (modifiedData && completionHandler) {
+                                completionHandler(modifiedData, response, error);
+                                return;
+                            }
+                        }
+                    } @catch(NSException* e) {}
+                }
             }
         }
         if (completionHandler) completionHandler(data, response, error);
@@ -485,7 +524,7 @@ static void setupMenu() {
         if (!packetLog) return;
         NSString* entry = [NSString stringWithFormat:@"TASK: %@\n", urlStr];
         [packetLog insertObject:entry atIndex:0];
-        if (packetLog.count > 50) [packetLog removeLastObject];
+        if (packetLog.count > 100) [packetLog removeLastObject];
         UITextView* log = (UITextView*)[menuPanel viewWithTag:6001];
         if (log) log.text = [packetLog componentsJoinedByString:@""];
     });
