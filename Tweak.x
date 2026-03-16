@@ -327,6 +327,7 @@ static void setupMenu() {
     [menuPanel addSubview:contentArea];
 
     tabContents = [NSMutableArray array];
+
     UIView* rpcPlaceholder = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
     UILabel* rpcLbl = makeLabel(@"RPC tab coming soon", CGRectMake(10, 10, 265, 20), 12, NO);
     rpcLbl.textColor = COLOR_GRAY;
@@ -445,7 +446,7 @@ static void setupMenu() {
         if (log) log.text = [packetLog componentsJoinedByString:@""];
     });
 
-    return %orig(request, ^(NSData* data, NSURLResponse* response, NSError* error) {
+    void (^newHandler)(NSData*, NSURLResponse*, NSError*) = ^(NSData* data, NSURLResponse* response, NSError* error) {
         if (data) {
             NSString* body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
             if (body && ([body containsString:@"$VR$"] || [body containsString:@"$mobileIOS$"])) {
@@ -465,7 +466,9 @@ static void setupMenu() {
             }
         }
         if (completionHandler) completionHandler(data, response, error);
-    });
+    };
+
+    return %orig(request, newHandler);
 }
 
 %end
