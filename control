@@ -1,1 +1,8 @@
-
+Package: com.emder.bytemenu
+Name: Byte Menu
+Version: 1.2.0
+Architecture: iphoneos-arm
+Description: Byte Menu for Yeeps Companion
+Maintainer: emder
+Section: Tweaks
+Depends: mobilesubstrate
