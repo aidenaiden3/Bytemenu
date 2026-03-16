@@ -46,7 +46,6 @@ static UILabel* makeLabel(NSString* text, CGRect frame, CGFloat size, BOOL bold)
     return lbl;
 }
 
-// ─── Parse player name from Photon NickName format ────────────────────────
 static NSString* parseDisplayName(NSString* nickName) {
     if (!nickName || nickName.length == 0) return @"Unknown";
     NSArray* parts = [nickName componentsSeparatedByString:@"$"];
@@ -54,7 +53,6 @@ static NSString* parseDisplayName(NSString* nickName) {
     return nickName;
 }
 
-// ─── Parse platform from Photon NickName format ───────────────────────────
 static NSString* parsePlatform(NSString* nickName) {
     if (!nickName || nickName.length == 0) return @"";
     NSArray* parts = [nickName componentsSeparatedByString:@"$"];
@@ -62,7 +60,6 @@ static NSString* parsePlatform(NSString* nickName) {
     return @"";
 }
 
-// ─── Try to update player list UI ─────────────────────────────────────────
 static void updatePlayerListUI() {
     if (!capturedPlayers || capturedPlayers.count == 0) return;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -92,7 +89,6 @@ static void updatePlayerListUI() {
     });
 }
 
-// ─── Tabs ─────────────────────────────────────────────────────────────────
 static UIView* buildPlayersTab(UIViewController* vc) {
     UIView* v = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
 
@@ -331,11 +327,16 @@ static void setupMenu() {
     [menuPanel addSubview:contentArea];
 
     tabContents = [NSMutableArray array];
+    UIView* rpcPlaceholder = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 285, 340)];
+    UILabel* rpcLbl = makeLabel(@"RPC tab coming soon", CGRectMake(10, 10, 265, 20), 12, NO);
+    rpcLbl.textColor = COLOR_GRAY;
+    [rpcPlaceholder addSubview:rpcLbl];
+
     NSArray* tabs = @[
         buildPlayersTab(vc),
         buildProfileTab(vc),
         buildPacketTab(vc),
-        [UIView new]
+        rpcPlaceholder
     ];
 
     for (UIView* t in tabs) {
@@ -345,7 +346,6 @@ static void setupMenu() {
     }
     ((UIView*)tabContents[0]).hidden = NO;
 
-    // ── Methods ───────────────────────────────────────────────────────────
     class_addMethod([vc class], NSSelectorFromString(@"eBtnTapped:"),
         imp_implementationWithBlock(^(id _self, UIButton* b){
             menuOpen = !menuOpen;
@@ -431,15 +431,13 @@ static void setupMenu() {
         }), "v@:@");
 }
 
-// ─── NSURLSession hook — intercept HTTP traffic ───────────────────────────
 %hook NSURLSession
 
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
-                            completionHandler:(void (^)(NSData*, NSURLResponse*, NSError*))completionHandler {
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData*, NSURLResponse*, NSError*))completionHandler {
     NSString* urlStr = request.URL.absoluteString ?: @"";
 
-    // Log all requests to packet log
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (!packetLog) return;
         NSString* entry = [NSString stringWithFormat:@"HTTP: %@ %@\n", request.HTTPMethod ?: @"GET", urlStr];
         [packetLog insertObject:entry atIndex:0];
         if (packetLog.count > 50) [packetLog removeLastObject];
@@ -447,46 +445,31 @@ static void setupMenu() {
         if (log) log.text = [packetLog componentsJoinedByString:@""];
     });
 
-    // Intercept Photon/Yeeps API calls
-    if ([urlStr containsString:@"photon"] || [urlStr containsString:@"yeeps"] ||
-        [urlStr containsString:@"trass"] || [urlStr containsString:@"playfab"]) {
-
-        return %orig(request, ^(NSData* data, NSURLResponse* response, NSError* error) {
-            if (data) {
-                NSString* body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                if (body) {
-                    // Parse player names from response
-                    if ([body containsString:@"$VR$"] || [body containsString:@"$mobileIOS$"]) {
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            [capturedPlayers removeAllObjects];
-                            // Extract player entries using $ format
-                            NSArray* tokens = [body componentsSeparatedByString:@"\""];
-                            for (NSString* token in tokens) {
-                                if ([token containsString:@"$VR$"] || [token containsString:@"$mobileIOS$"]) {
-                                    NSArray* parts = [token componentsSeparatedByString:@"$"];
-                                    if (parts.count >= 3) {
-                                        [capturedPlayers addObject:@{
-                                            @"nick": token,
-                                            @"actor": @(capturedPlayers.count + 1)
-                                        }];
-                                    }
-                                }
+    return %orig(request, ^(NSData* data, NSURLResponse* response, NSError* error) {
+        if (data) {
+            NSString* body = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            if (body && ([body containsString:@"$VR$"] || [body containsString:@"$mobileIOS$"])) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [capturedPlayers removeAllObjects];
+                    NSArray* tokens = [body componentsSeparatedByString:@"\""];
+                    for (NSString* token in tokens) {
+                        if ([token containsString:@"$VR$"] || [token containsString:@"$mobileIOS$"]) {
+                            NSArray* parts = [token componentsSeparatedByString:@"$"];
+                            if (parts.count >= 3) {
+                                [capturedPlayers addObject:@{@"nick": token, @"actor": @(capturedPlayers.count + 1)}];
                             }
-                            updatePlayerListUI();
-                        });
+                        }
                     }
-                }
+                    updatePlayerListUI();
+                });
             }
-            if (completionHandler) completionHandler(data, response, error);
-        });
-    }
-
-    return %orig;
+        }
+        if (completionHandler) completionHandler(data, response, error);
+    });
 }
 
 %end
 
-// ─── Hook NSURLSession delegate too ──────────────────────────────────────
 %hook NSURLSessionTask
 
 - (void)resume {
@@ -495,8 +478,8 @@ static void setupMenu() {
     if (!req) return;
     NSString* urlStr = req.URL.absoluteString ?: @"";
     if (urlStr.length == 0) return;
-
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (!packetLog) return;
         NSString* entry = [NSString stringWithFormat:@"TASK: %@\n", urlStr];
         [packetLog insertObject:entry atIndex:0];
         if (packetLog.count > 50) [packetLog removeLastObject];
