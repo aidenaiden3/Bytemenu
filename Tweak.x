@@ -1,12 +1,23 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-static UIWindow* overlayWindow = nil;
+@interface PassthroughWindow : UIWindow
+@end
+
+@implementation PassthroughWindow
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    if (hit == self.rootViewController.view) return nil;
+    return hit;
+}
+@end
+
+static PassthroughWindow* overlayWindow = nil;
 static UIView* menuPanel = nil;
 static BOOL menuOpen = NO;
 
 static void setupMenu() {
-    overlayWindow = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    overlayWindow = [[PassthroughWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     overlayWindow.windowLevel = UIWindowLevelStatusBar + 100;
     overlayWindow.backgroundColor = UIColor.clearColor;
     overlayWindow.userInteractionEnabled = YES;
