@@ -598,7 +598,7 @@ static void setupMenu() {
                 UIButton* colorBtn = makeBtn(@"🎨 Color", CGRectMake(174, 14, 52, 26), COLOR_ACCENT);
                 [colorBtn setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
                 colorBtn.titleLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
-                [colorBtn addTarget:nil action:nil forControlEvents:UIControlEventTouchUpInside];
+                [colorBtn addTarget:colorBtn action:NSSelectorFromString(@"colorBtnTapped:") forControlEvents:UIControlEventTouchUpInside];
                 objc_setAssociatedObject(colorBtn, "playerData", pd, OBJC_ASSOCIATION_RETAIN);
                 objc_setAssociatedObject(colorBtn, "viewController", weakVC, OBJC_ASSOCIATION_ASSIGN);
 
