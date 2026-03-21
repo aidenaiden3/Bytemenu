@@ -123,13 +123,6 @@ typedef int   (*GetArrayLength_t)(void*);
 typedef void* (*GetNickName_t)(void*);
 typedef int   (*GetActorNumber_t)(void*);
 
-static void* photonRoomClass = nil;
-static GetPlayersArray_t getPlayersArrayFn = nil;
-static GetArrayLength_t getArrayLengthFn = nil;
-static GetArrayElement_t getArrayElementFn = nil;
-static GetNickName_t getNickNameFn = nil;
-static GetActorNumber_t getActorNumberFn = nil;
-
 // ─── Avatar color functions ───────────────────────────────────────────────
 typedef void (*SetOverrideBaseColor_t)(void*, float, float, float, float);
 typedef void (*ClearOverrideBaseColor_t)(void*);
