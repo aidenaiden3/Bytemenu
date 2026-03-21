@@ -75,20 +75,22 @@ static NSString* parsePlatform(NSString* nickName) {
 // ─── Load UnityFramework ──────────────────────────────────────────────────
 static void loadUnityFramework() {
     if (unityFramework) return;
-    unityFramework = dlopen("@executable_path/Frameworks/UnityFramework.framework/UnityFramework", RTLD_NOW | RTLD_GLOBAL);
-    if (!unityFramework) {
-        NSLog(@"[YeepsMod] Failed to load UnityFramework");
-        return;
+    @try {
+        unityFramework = dlopen("@executable_path/Frameworks/UnityFramework.framework/UnityFramework", RTLD_NOW | RTLD_GLOBAL);
+        if (!unityFramework) {
+            NSLog(@"[YeepsMod] Failed to load UnityFramework: %s", dlerror());
+            return;
+        }
+        il2cpp_domain_get = (void*(*)(void))dlsym(unityFramework, "il2cpp_domain_get");
+        il2cpp_domain_get_assemblies = (void*(*)(void*, size_t*))dlsym(unityFramework, "il2cpp_domain_get_assemblies");
+        il2cpp_assembly_get_image = (void*(*)(void*))dlsym(unityFramework, "il2cpp_assembly_get_image");
+        il2cpp_class_from_name = (void*(*)(void*, const char*, const char*))dlsym(unityFramework, "il2cpp_class_from_name");
+        il2cpp_class_get_method_from_name = (void*(*)(void*, const char*, int))dlsym(unityFramework, "il2cpp_class_get_method_from_name");
+        il2cpp_method_get_pointer = (void*(*)(void*))dlsym(unityFramework, "il2cpp_method_get_pointer");
+        NSLog(@"[YeepsMod] UnityFramework loaded ok");
+    } @catch(NSException* e) {
+        NSLog(@"[YeepsMod] loadUnityFramework exception: %@", e);
     }
-
-    il2cpp_domain_get = (void*(*)(void))dlsym(unityFramework, "il2cpp_domain_get");
-    il2cpp_domain_get_assemblies = (void*(*)(void*, size_t*))dlsym(unityFramework, "il2cpp_domain_get_assemblies");
-    il2cpp_assembly_get_image = (void*(*)(void*))dlsym(unityFramework, "il2cpp_assembly_get_image");
-    il2cpp_class_from_name = (void*(*)(void*, const char*, const char*))dlsym(unityFramework, "il2cpp_class_from_name");
-    il2cpp_class_get_method_from_name = (void*(*)(void*, const char*, int))dlsym(unityFramework, "il2cpp_class_get_method_from_name");
-    il2cpp_method_get_pointer = (void*(*)(void*))dlsym(unityFramework, "il2cpp_method_get_pointer");
-
-    NSLog(@"[YeepsMod] UnityFramework loaded. domain_get=%p", il2cpp_domain_get);
 }
 
 // ─── Find IL2CPP method pointer ───────────────────────────────────────────
