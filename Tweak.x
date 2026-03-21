@@ -777,10 +777,14 @@ static void setupMenu() {
 }
 
 %ctor {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         setupMenu();
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            initIL2CPP();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            @try {
+                initIL2CPP();
+            } @catch(NSException* e) {
+                NSLog(@"[YeepsMod] initIL2CPP failed: %@", e);
+            }
         });
     });
 }
